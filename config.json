@@ -1,0 +1,34 @@
+{
+    "binance": {
+        "rest_url": "https://api.binance.com/api/v3/depth",
+        "ws_url": "wss://stream.binance.com:443/ws/{pair}@depth",
+        "rate_limit": 0.2,
+        "param_map": {
+            "instrument_id": "symbol",
+            "depth_size": "limit"
+        },
+        "snapshot_parser": "binance_snapshot_parser",
+        "subscription_template": {
+            "method": "SUBSCRIBE",
+            "params": ["{pair}@depth"],
+            "id": 1
+        }
+    },
+    "okx":{
+        "rest_url": "https://www.okx.com/api/v5/market/books-full",
+        "ws_url": "wss://ws.okx.com:8443/ws/v5/public",
+        "rate_limit": 0.2,
+        "param_map": {
+            "instrument_id": "instId",
+            "depth_size": "sz"
+        },
+        "snapshot_parser": "okx_snapshot_parser",
+        "subscription_template": {
+            "op": "subscribe",
+            "args": [{
+                "channel": "books",
+                "instId": "{pair}"
+            }]
+        }
+    }
+}

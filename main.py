@@ -1,0 +1,180 @@
+import asyncio
+from websockets import connect
+import aiofiles
+import sys
+import json
+import httpx
+import time
+import datetime
+import os
+
+RECONNECT_THRESHOLD = 86400 - 60
+
+EXCHANGE_CONFIG = {
+    "binance": {
+        "rest_url": "https://api.binance.com/api/v3/depth",
+        "ws_url": "wss://stream.binance.com:443/ws/{pair}@depth",
+        "rate_limit": 0.2,  # 5次/秒
+        "param_map": {
+            "instrument_id": "symbol",
+            "depth_size": "limit"
+        },
+        "snapshot_parser": lambda data: {
+            "asks": data["asks"],
+            "bids": data["bids"],
+            "ts": data["lastUpdateId"]
+        },
+        "subscription_template": {
+            "method": "SUBSCRIBE",
+            "params": ["{pair}@depth"],
+            "id": 1
+        }
+    },
+    "okx": {
+        "rest_url": "https://www.okx.com//api/v5/market/books",
+        "ws_url": "wss://ws.okx.com:8443/ws/v5/public",
+        "rate_limit": 0.2,  # 10次/2秒 → 每次请求间隔 ≥0.2秒
+        "param_map": {
+            "instrument_id": "instId",
+            "depth_size": "sz"  # 最大400
+        },
+        "snapshot_parser": lambda data: {
+            "asks": data["data"][0]["asks"],
+            "bids": data["data"][0]["bids"],
+            "ts": data["data"][0]["ts"]
+        },
+        "subscription_template": {
+            "op": "subscribe",
+            "args": [{
+                "channel": "books",  # 频道名称
+                "instId": "{pair}"   # BTC-USDT
+            }]
+        }
+    }
+}
+
+async def get_snapshot(exchange_name, pair, date):
+
+    config = EXCHANGE_CONFIG[exchange_name]
+
+    try:
+        params = {
+            config["param_map"]["instrument_id"]: pair.upper(),
+            config["param_map"]["depth_size"]: "100"
+            }
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(config["rest_url"], params=params)
+
+        response.raise_for_status()  # Raise error for non-200 responses
+        data = response.json()
+
+        snapshot = config["snapshot_parser"](data)
+        snapshot["timestamp"] = time.time()
+
+        os.makedirs(exchange_name, exist_ok=True)
+        file_path = f"{exchange_name}/orderbook_{pair}-snapshot-{date}.txt"
+
+        async with aiofiles.open(file_path, mode="a") as f:
+            await f.write(json.dumps(snapshot) + "\n")
+
+        print(f"[{exchange_name.upper()}] Snapshot saved to {file_path}")
+        return True
+
+    except httpx.HTTPStatusError as exc:
+        error_json = exc.response.json()
+        if error_json.get("code") == -1003:
+            print("Rate limit exceeded while fetching snapshot. Waiting before retrying...")
+            print(f"Error message: {error_json.get('msg')}")
+            pass
+        else:
+            print(f"HTTP error occurred: {exc}")
+
+    except Exception as e:
+        print(f"An error occurred while getting snapshot: {e}")
+
+async def listener(ws, exchange_name, pair, date, stop_event):
+    """Global listener function"""
+    config = EXCHANGE_CONFIG[exchange_name]
+
+    sub_msg = json.loads(json.dumps(config["subscription_template"])
+                            .replace("{pair}", pair.upper()))
+    await ws.send(json.dumps(sub_msg))
+    print(f"[{exchange_name.upper()}] Sent subscription: {sub_msg}")
+
+    while not stop_event.is_set():
+        try:
+            data = await asyncio.wait_for(ws.recv(), timeout=10)
+            message = json.loads(data)
+            async with aiofiles.open(f"{exchange_name}/orderbook_{pair}-update-{date}.txt", mode="a") as f:
+                await f.write(json.dumps(message) + "\n")
+            print(f"[{exchange_name.upper()}] Update received @ {datetime.datetime.now()}")
+
+        except asyncio.TimeoutError:
+            continue
+        except json.JSONDecodeError:
+                print(f"[{exchange_name.upper()}] Invalid JSON received")
+        except Exception as e:
+            print(f'Error receiving data: {e}')
+            break
+
+async def start_monitoring(exchange_name, pair):
+    """Load in main monitor function"""
+    config = EXCHANGE_CONFIG[exchange_name]
+    if not config:
+        raise ValueError(f"Exchange {exchange_name} not supported")
+
+    os.makedirs(exchange_name, exist_ok=True)
+    date = datetime.datetime.now().date().isoformat()
+    pair_lower = pair.lower()
+
+    # get inital snapshot
+    await get_snapshot(exchange_name, pair, date)   
+
+    # set up websocket connection
+    ws_url = config["ws_url"].format(pair=pair)
+    stop_event = asyncio.Event()
+    reconnect_counter = 0
+
+    while True:
+        try:
+            async with connect(ws_url) as ws:
+                listener_task = asyncio.create_task(listener(ws, exchange_name, pair, date, stop_event))
+
+                connect_start_time = time.time()
+                while True:
+                    if time.time() - connect_start_time > RECONNECT_THRESHOLD:
+                        new_date = datetime.datetime.now().date().isoformat()
+                        if new_date != date:
+                            date = new_date
+                            await get_snapshot(exchange_name, pair, date)
+                        
+                        stop_event.set()
+                        await ws.close()
+                        await listener_task
+                        connect_time = time.time()
+                        stop_event = asyncio.Event()
+                        break
+                    await asyncio.sleep(0.1)
+
+        except Exception as e:
+            reconnect_counter += 1
+            wait_time = min(2 ** reconnect_counter, 60)
+            print(f"[{exchange_name.upper()}] Connection error: {str(e)}, reconnecting in {wait_time}s...")
+            await asyncio.sleep(wait_time)
+
+async def main():
+    # monitor multiple exchanges
+    tasks = [
+        asyncio.create_task(start_monitoring("binance", "solusdt")),
+        asyncio.create_task(start_monitoring("okx", "BTC-USDT"))
+    ]
+    await asyncio.gather(*tasks)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
+    date = datetime.datetime.now().date()
+
+    pair_lower = pair.lower()
+    pass
