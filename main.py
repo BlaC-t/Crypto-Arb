@@ -50,6 +50,10 @@ EXCHANGE_CONFIG = {
                 "instId": "{pair}"   # BTC-USDT
             }]
         }
+    },
+    'bybit':{
+        "rest_url": "https://api-testnet.bybit.com//v5/market/orderbook",
+        "ws_url": "wss://stream.bybit.com/v5/public/spot",
     }
 }
 
@@ -152,7 +156,7 @@ async def start_monitoring(exchange_name, pair):
                         stop_event.set()
                         await ws.close()
                         await listener_task
-                        connect_time = time.time()
+                        connect_start_time = time.time()
                         stop_event = asyncio.Event()
                         break
                     await asyncio.sleep(0.1)
@@ -167,7 +171,8 @@ async def main():
     # monitor multiple exchanges
     tasks = [
         asyncio.create_task(start_monitoring("binance", "solusdt")),
-        asyncio.create_task(start_monitoring("okx", "BTC-USDT"))
+        asyncio.create_task(start_monitoring("okx", "BTC-USDT")),
+        asyncio.create_task(start_monitoring("bybit", "BTCUSDT"))
     ]
     await asyncio.gather(*tasks)
 
