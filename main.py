@@ -110,6 +110,8 @@ async def listener(ws, exchange_name, pair, date, stop_event):
         try:
             data = await asyncio.wait_for(ws.recv(), timeout=10)
             message = json.loads(data)
+            record_time = datetime.datetime.now().timestamp()
+            message["record_time"] = record_time
             async with aiofiles.open(f"{exchange_name}/orderbook_{pair}-update-{date}.txt", mode="a") as f:
                 await f.write(json.dumps(message) + "\n")
             print(f"[{exchange_name.upper()}] Update received @ {datetime.datetime.now()}")
@@ -172,14 +174,9 @@ async def main():
     tasks = [
         asyncio.create_task(start_monitoring("binance", "solusdt")),
         asyncio.create_task(start_monitoring("okx", "BTC-USDT")),
-        asyncio.create_task(start_monitoring("bybit", "BTCUSDT"))
+        #asyncio.create_task(start_monitoring("bybit", "BTCUSDT"))
     ]
     await asyncio.gather(*tasks)
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-    date = datetime.datetime.now().date()
-
-    pair_lower = pair.lower()
-    pass
