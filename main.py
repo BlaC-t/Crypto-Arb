@@ -15,6 +15,7 @@ EXCHANGE_CONFIG = {
         "rest_url": "https://api.binance.com/api/v3/depth",
         "ws_url": "wss://stream.binance.com:443/ws/{pair}@depth",
         "rate_limit": 0.2,  # 5次/秒
+        "symbol_format":"xxxyyyy",
         "param_map": {
             "instrument_id": "symbol",
             "depth_size": "limit"
@@ -34,6 +35,7 @@ EXCHANGE_CONFIG = {
         "rest_url": "https://www.okx.com//api/v5/market/books",
         "ws_url": "wss://ws.okx.com:8443/ws/v5/public",
         "rate_limit": 0.2,  # 10次/2秒 → 每次请求间隔 ≥0.2秒
+        "symbol_format":"XXX-YYYY",
         "param_map": {
             "instrument_id": "instId",
             "depth_size": "sz"  # 最大400
@@ -54,8 +56,46 @@ EXCHANGE_CONFIG = {
     'bybit':{
         "rest_url": "https://api-testnet.bybit.com//v5/market/orderbook",
         "ws_url": "wss://stream.bybit.com/v5/public/spot",
+        "symbol_format":"XXXYYYY"
     }
 }
+
+async def symbol_formating(symbol_format: str, pair: str) -> str:
+    pair_letters_only = ''.join([char for char in pair if char.isalpha()])
+
+    if "USDT" in pair_letters_only.upper():
+        first_part = pair_letters_only.upper().split("USDT")[0]
+        second_part = "USDT"
+    else:
+        raise ValueError("The input string must contain 'USDT'.")
+    
+    if not (symbol_format.count("x") + symbol_format.count("X") == len(first_part) and
+            symbol_format.count("y") + symbol_format.count("Y") == len(second_part)):
+        raise ValueError("The format string does not match the expected structure.")
+
+    mapped_string = ""
+    format_index = 0
+
+    for char in symbol_format:
+        if char.lower() == "x":
+            mapped_char = first_part[format_index]
+            if char.isupper():
+                mapped_string += mapped_char.upper()
+            else:
+                mapped_string += mapped_char.lower()
+            format_index += 1
+
+        elif char.lower() == "y":
+            mapped_char = second_part[format_index - len(first_part)]
+            if char.isupper():
+                mapped_string += mapped_char.upper()
+            else:
+                mapped_string += mapped_char.lower()
+            format_index += 1
+        else:
+            mapped_string += char
+    return mapped_string
+    
 
 async def get_snapshot(exchange_name, pair, date):
 
@@ -102,7 +142,7 @@ async def listener(ws, exchange_name, pair, date, stop_event):
     config = EXCHANGE_CONFIG[exchange_name]
 
     sub_msg = json.loads(json.dumps(config["subscription_template"])
-                            .replace("{pair}", pair.upper()))
+                            .replace("{pair}", pair))
     await ws.send(json.dumps(sub_msg))
     print(f"[{exchange_name.upper()}] Sent subscription: {sub_msg}")
 
@@ -132,20 +172,22 @@ async def start_monitoring(exchange_name, pair):
 
     os.makedirs(exchange_name, exist_ok=True)
     date = datetime.datetime.now().date().isoformat()
-    pair_lower = pair.lower()
+
+    symbol_format = config["symbol_format"]
+    pair_formated = await symbol_formating(symbol_format, pair)
 
     # get inital snapshot
-    await get_snapshot(exchange_name, pair, date)   
+    await get_snapshot(exchange_name, pair_formated, date)   
 
     # set up websocket connection
-    ws_url = config["ws_url"].format(pair=pair)
+    ws_url = config["ws_url"].format(pair=pair_formated)
     stop_event = asyncio.Event()
     reconnect_counter = 0
 
     while True:
         try:
             async with connect(ws_url) as ws:
-                listener_task = asyncio.create_task(listener(ws, exchange_name, pair, date, stop_event))
+                listener_task = asyncio.create_task(listener(ws, exchange_name, pair_formated, date, stop_event))
 
                 connect_start_time = time.time()
                 while True:
@@ -153,7 +195,7 @@ async def start_monitoring(exchange_name, pair):
                         new_date = datetime.datetime.now().date().isoformat()
                         if new_date != date:
                             date = new_date
-                            await get_snapshot(exchange_name, pair, date)
+                            await get_snapshot(exchange_name, pair_formated, date)
                         
                         stop_event.set()
                         await ws.close()
