@@ -8,6 +8,8 @@ import time
 import datetime
 import os
 
+from tools import symbol_formating
+
 RECONNECT_THRESHOLD = 86400 - 60
 
 EXCHANGE_CONFIG = {
@@ -53,48 +55,27 @@ EXCHANGE_CONFIG = {
             }]
         }
     },
-    'bybit':{
-        "rest_url": "https://api-testnet.bybit.com//v5/market/orderbook",
+    "bybit": {
+        "rest_url": "https://api.bybit.com/v5/market/orderbook",
         "ws_url": "wss://stream.bybit.com/v5/public/spot",
-        "symbol_format":"XXXYYYY"
+        "rate_limit": 0.1,  # 10次/秒
+        "symbol_format":"XXXYYYY",
+        "depth": 200,
+        "param_map": {
+            "instrument_id": "symbol",  # Bybit使用symbol参数
+            "depth_size": "limit"       # 档位数参数
+        },
+        "snapshot_parser": lambda data: {  # 自定义解析逻辑
+            "asks": data["result"]["a"],
+            "bids": data["result"]["b"],
+            "ts": data["result"]["ts"]
+        },
+        "subscription_template": {
+            "op": "subscribe",
+            "args": ["orderbook.{depth}.{pair}"]  # 订阅100档深度
+        }
     }
 }
-
-async def symbol_formating(symbol_format: str, pair: str) -> str:
-    pair_letters_only = ''.join([char for char in pair if char.isalpha()])
-
-    if "USDT" in pair_letters_only.upper():
-        first_part = pair_letters_only.upper().split("USDT")[0]
-        second_part = "USDT"
-    else:
-        raise ValueError("The input string must contain 'USDT'.")
-    
-    if not (symbol_format.count("x") + symbol_format.count("X") == len(first_part) and
-            symbol_format.count("y") + symbol_format.count("Y") == len(second_part)):
-        raise ValueError("The format string does not match the expected structure.")
-
-    mapped_string = ""
-    format_index = 0
-
-    for char in symbol_format:
-        if char.lower() == "x":
-            mapped_char = first_part[format_index]
-            if char.isupper():
-                mapped_string += mapped_char.upper()
-            else:
-                mapped_string += mapped_char.lower()
-            format_index += 1
-
-        elif char.lower() == "y":
-            mapped_char = second_part[format_index - len(first_part)]
-            if char.isupper():
-                mapped_string += mapped_char.upper()
-            else:
-                mapped_string += mapped_char.lower()
-            format_index += 1
-        else:
-            mapped_string += char
-    return mapped_string
     
 
 async def get_snapshot(exchange_name, pair, date):
@@ -102,10 +83,17 @@ async def get_snapshot(exchange_name, pair, date):
     config = EXCHANGE_CONFIG[exchange_name]
 
     try:
-        params = {
-            config["param_map"]["instrument_id"]: pair.upper(),
-            config["param_map"]["depth_size"]: "100"
-            }
+        if exchange_name == "bybit":
+            params = {
+                config["param_map"]["instrument_id"]: pair.upper(),
+                config["param_map"]["depth_size"]: "100",
+                "category": "spot"
+                }
+        else:
+            params = {
+                config["param_map"]["instrument_id"]: pair.upper(),
+                config["param_map"]["depth_size"]: "100"
+                }
         
         async with httpx.AsyncClient() as client:
             response = await client.get(config["rest_url"], params=params)
@@ -141,11 +129,22 @@ async def listener(ws, exchange_name, pair, date, stop_event):
     """Global listener function"""
     config = EXCHANGE_CONFIG[exchange_name]
 
-    sub_msg = json.loads(json.dumps(config["subscription_template"])
+    if exchange_name == "bybit":
+        sub_msg = json.loads(json.dumps(config["subscription_template"])
+                            .replace("{pair}", pair)
+                            .replace("{depth}", str(config["depth"])))
+    else:
+        sub_msg = json.loads(json.dumps(config["subscription_template"])
                             .replace("{pair}", pair))
+    
     await ws.send(json.dumps(sub_msg))
     print(f"[{exchange_name.upper()}] Sent subscription: {sub_msg}")
 
+    # wait for subscription ack
+    ack = await ws.recv()
+    print(f"[{exchange_name.upper()}] Subscription ack: {ack}")
+
+    # general listener algorithm
     while not stop_event.is_set():
         try:
             data = await asyncio.wait_for(ws.recv(), timeout=10)
@@ -214,9 +213,9 @@ async def start_monitoring(exchange_name, pair):
 async def main():
     # monitor multiple exchanges
     tasks = [
-        asyncio.create_task(start_monitoring("binance", "solusdt")),
-        asyncio.create_task(start_monitoring("okx", "BTC-USDT")),
-        #asyncio.create_task(start_monitoring("bybit", "BTCUSDT"))
+        # asyncio.create_task(start_monitoring("binance", "solusdt")),
+        # asyncio.create_task(start_monitoring("okx", "BTC-USDT")),
+        asyncio.create_task(start_monitoring("bybit", "BTCUSDT"))
     ]
     await asyncio.gather(*tasks)
 
