@@ -8,6 +8,8 @@ import time
 import datetime
 import os
 
+from tools import symbol_formating
+
 RECONNECT_THRESHOLD = 86400 - 60
 
 EXCHANGE_CONFIG = {
@@ -15,6 +17,7 @@ EXCHANGE_CONFIG = {
         "rest_url": "https://api.binance.com/api/v3/depth",
         "ws_url": "wss://stream.binance.com:443/ws/{pair}@depth",
         "rate_limit": 0.2,  # 5次/秒
+        "symbol_format":"xxxyyyy",
         "param_map": {
             "instrument_id": "symbol",
             "depth_size": "limit"
@@ -34,6 +37,7 @@ EXCHANGE_CONFIG = {
         "rest_url": "https://www.okx.com//api/v5/market/books",
         "ws_url": "wss://ws.okx.com:8443/ws/v5/public",
         "rate_limit": 0.2,  # 10次/2秒 → 每次请求间隔 ≥0.2秒
+        "symbol_format":"XXX-YYYY",
         "param_map": {
             "instrument_id": "instId",
             "depth_size": "sz"  # 最大400
@@ -51,21 +55,45 @@ EXCHANGE_CONFIG = {
             }]
         }
     },
-    'bybit':{
-        "rest_url": "https://api-testnet.bybit.com//v5/market/orderbook",
+    "bybit": {
+        "rest_url": "https://api.bybit.com/v5/market/orderbook",
         "ws_url": "wss://stream.bybit.com/v5/public/spot",
+        "rate_limit": 0.1,  # 10次/秒
+        "symbol_format":"XXXYYYY",
+        "depth": 200,
+        "param_map": {
+            "instrument_id": "symbol",  # Bybit使用symbol参数
+            "depth_size": "limit"       # 档位数参数
+        },
+        "snapshot_parser": lambda data: {  # 自定义解析逻辑
+            "asks": data["result"]["a"],
+            "bids": data["result"]["b"],
+            "ts": data["result"]["ts"]
+        },
+        "subscription_template": {
+            "op": "subscribe",
+            "args": ["orderbook.{depth}.{pair}"]  # 订阅100档深度
+        }
     }
 }
+    
 
 async def get_snapshot(exchange_name, pair, date):
 
     config = EXCHANGE_CONFIG[exchange_name]
 
     try:
-        params = {
-            config["param_map"]["instrument_id"]: pair.upper(),
-            config["param_map"]["depth_size"]: "100"
-            }
+        if exchange_name == "bybit":
+            params = {
+                config["param_map"]["instrument_id"]: pair.upper(),
+                config["param_map"]["depth_size"]: "100",
+                "category": "spot"
+                }
+        else:
+            params = {
+                config["param_map"]["instrument_id"]: pair.upper(),
+                config["param_map"]["depth_size"]: "100"
+                }
         
         async with httpx.AsyncClient() as client:
             response = await client.get(config["rest_url"], params=params)
@@ -101,11 +129,22 @@ async def listener(ws, exchange_name, pair, date, stop_event):
     """Global listener function"""
     config = EXCHANGE_CONFIG[exchange_name]
 
-    sub_msg = json.loads(json.dumps(config["subscription_template"])
-                            .replace("{pair}", pair.upper()))
+    if exchange_name == "bybit":
+        sub_msg = json.loads(json.dumps(config["subscription_template"])
+                            .replace("{pair}", pair)
+                            .replace("{depth}", str(config["depth"])))
+    else:
+        sub_msg = json.loads(json.dumps(config["subscription_template"])
+                            .replace("{pair}", pair))
+    
     await ws.send(json.dumps(sub_msg))
     print(f"[{exchange_name.upper()}] Sent subscription: {sub_msg}")
 
+    # wait for subscription ack
+    ack = await ws.recv()
+    print(f"[{exchange_name.upper()}] Subscription ack: {ack}")
+
+    # general listener algorithm
     while not stop_event.is_set():
         try:
             data = await asyncio.wait_for(ws.recv(), timeout=10)
@@ -132,20 +171,22 @@ async def start_monitoring(exchange_name, pair):
 
     os.makedirs(exchange_name, exist_ok=True)
     date = datetime.datetime.now().date().isoformat()
-    pair_lower = pair.lower()
+
+    symbol_format = config["symbol_format"]
+    pair_formated = await symbol_formating(symbol_format, pair)
 
     # get inital snapshot
-    await get_snapshot(exchange_name, pair, date)   
+    await get_snapshot(exchange_name, pair_formated, date)   
 
     # set up websocket connection
-    ws_url = config["ws_url"].format(pair=pair)
+    ws_url = config["ws_url"].format(pair=pair_formated)
     stop_event = asyncio.Event()
     reconnect_counter = 0
 
     while True:
         try:
             async with connect(ws_url) as ws:
-                listener_task = asyncio.create_task(listener(ws, exchange_name, pair, date, stop_event))
+                listener_task = asyncio.create_task(listener(ws, exchange_name, pair_formated, date, stop_event))
 
                 connect_start_time = time.time()
                 while True:
@@ -153,7 +194,7 @@ async def start_monitoring(exchange_name, pair):
                         new_date = datetime.datetime.now().date().isoformat()
                         if new_date != date:
                             date = new_date
-                            await get_snapshot(exchange_name, pair, date)
+                            await get_snapshot(exchange_name, pair_formated, date)
                         
                         stop_event.set()
                         await ws.close()
@@ -172,9 +213,9 @@ async def start_monitoring(exchange_name, pair):
 async def main():
     # monitor multiple exchanges
     tasks = [
-        asyncio.create_task(start_monitoring("binance", "solusdt")),
-        asyncio.create_task(start_monitoring("okx", "BTC-USDT")),
-        #asyncio.create_task(start_monitoring("bybit", "BTCUSDT"))
+        # asyncio.create_task(start_monitoring("binance", "solusdt")),
+        # asyncio.create_task(start_monitoring("okx", "BTC-USDT")),
+        asyncio.create_task(start_monitoring("bybit", "BTCUSDT"))
     ]
     await asyncio.gather(*tasks)
 
