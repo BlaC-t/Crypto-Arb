@@ -56,7 +56,7 @@ EXCHANGE_CONFIG = {
         }
     },
     "bybit": {
-        "rest_url": "https://api.bybit.com/v5/market/orderbook",
+        "rest_url": "https://api.bitget.com/api/v2/spot/market/orderbook",
         "ws_url": "wss://stream.bybit.com/v5/public/spot",
         "rate_limit": 0.1,  # 10次/秒
         "symbol_format":"XXXYYYY",
@@ -74,6 +74,31 @@ EXCHANGE_CONFIG = {
             "op": "subscribe",
             "args": ["orderbook.{depth}.{pair}"]  # 订阅100档深度
         }
+    },
+    "bitget": {
+        "rest_url": "https://api.bitget.com/api/spot/v2/market/depth",
+        "ws_url": "wss://ws.bitget.com/v2/ws/public",
+        "rate_limit": 0.1,  # 10次/秒
+        "symbol_format": "XXXYYYY",  # 例如BTCUSDT
+        "param_map": {
+            "instrument_id": "symbol",
+            "depth_size": "limit"
+        },
+        "snapshot_parser": lambda data: {
+            "asks": [[entry[0], entry[1]] for entry in data["data"]["asks"]],
+            "bids": [[entry[0], entry[1]] for entry in data["data"]["bids"]],
+            "ts": data["data"]["ts"]
+        },
+        "subscription_template": {
+            "op": "subscribe",
+            "args": [
+                {
+                "instType": "SPOT",
+                "channel": "books",
+                "instId": "{pair}"
+                }
+            ]
+        }
     }
 }
     
@@ -84,6 +109,13 @@ async def get_snapshot(exchange_name, pair, date):
 
     try:
         if exchange_name == "bybit":
+            params = {
+                config["param_map"]["instrument_id"]: pair.upper(),
+                config["param_map"]["depth_size"]: "100",
+                "category": "spot"
+                }
+        elif exchange_name == "bitget":
+            config['rest_url'] = "https://api.bitget.com/api/v2/spot/market/orderbook?symbol=BTCUSDT&type=step0&limit=100"
             params = {
                 config["param_map"]["instrument_id"]: pair.upper(),
                 config["param_map"]["depth_size"]: "100",
@@ -215,7 +247,8 @@ async def main():
     tasks = [
         # asyncio.create_task(start_monitoring("binance", "solusdt")),
         # asyncio.create_task(start_monitoring("okx", "BTC-USDT")),
-        asyncio.create_task(start_monitoring("bybit", "BTCUSDT"))
+        # asyncio.create_task(start_monitoring("bybit", "BTCUSDT"))
+        asyncio.create_task(start_monitoring("bitget", "BTCUSDT"))
     ]
     await asyncio.gather(*tasks)
 
