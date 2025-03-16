@@ -8,7 +8,7 @@ import time
 import datetime
 import os
 
-from tools import symbol_formating
+from tools import symbol_formating, send_ping
 
 RECONNECT_THRESHOLD = 86400 - 60
 
@@ -56,7 +56,7 @@ EXCHANGE_CONFIG = {
         }
     },
     "bybit": {
-        "rest_url": "https://api.bitget.com/api/v2/spot/market/orderbook",
+        "rest_url": "https://api.bybit.com/v5/market/orderbook",
         "ws_url": "wss://stream.bybit.com/v5/public/spot",
         "rate_limit": 0.1,  # 10次/秒
         "symbol_format":"XXXYYYY",
@@ -185,6 +185,11 @@ async def listener(ws, exchange_name, pair, date, stop_event):
             message["record_time"] = record_time
             async with aiofiles.open(f"{exchange_name}/orderbook_{pair}-update-{date}.txt", mode="a") as f:
                 await f.write(json.dumps(message) + "\n")
+
+            log_message = f"[{exchange_name.upper()}] Update received @ {datetime.datetime.now()}\n"
+            with open("logs.txt", "a") as log_file:
+                log_file.write(log_message)
+
             print(f"[{exchange_name.upper()}] Update received @ {datetime.datetime.now()}")
 
         except asyncio.TimeoutError:
@@ -218,6 +223,9 @@ async def start_monitoring(exchange_name, pair):
     while True:
         try:
             async with connect(ws_url) as ws:
+          
+                if exchange_name == "bitget":
+                    ping_task = asyncio.create_task(send_ping(ws))
                 listener_task = asyncio.create_task(listener(ws, exchange_name, pair_formated, date, stop_event))
 
                 connect_start_time = time.time()
@@ -229,6 +237,7 @@ async def start_monitoring(exchange_name, pair):
                             await get_snapshot(exchange_name, pair_formated, date)
                         
                         stop_event.set()
+                        ping_task.cancel()
                         await ws.close()
                         await listener_task
                         connect_start_time = time.time()
@@ -245,12 +254,21 @@ async def start_monitoring(exchange_name, pair):
 async def main():
     # monitor multiple exchanges
     tasks = [
-        # asyncio.create_task(start_monitoring("binance", "solusdt")),
+        # asyncio.create_task(start_monitoring("binance", "BTCUSDT")),
         # asyncio.create_task(start_monitoring("okx", "BTC-USDT")),
-        # asyncio.create_task(start_monitoring("bybit", "BTCUSDT"))
-        asyncio.create_task(start_monitoring("bitget", "BTCUSDT"))
+        asyncio.create_task(start_monitoring("bybit", "BTCUSDT")),
+        # asyncio.create_task(start_monitoring("bitget", "BTCUSDT"))
     ]
-    await asyncio.gather(*tasks)
+    try:
+        # Wait for all tasks for 5 hours (5*60*60 seconds)
+        await asyncio.wait_for(asyncio.gather(*tasks), timeout=60*60)
+    except asyncio.TimeoutError:
+        print("5 hours reached; cancelling tasks...")
+        # Cancel each task
+        for task in tasks:
+            task.cancel()
+        # Optionally, wait for the tasks to finish cancellation
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 if __name__ == "__main__":
     asyncio.run(main())
