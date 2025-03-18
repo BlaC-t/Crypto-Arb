@@ -43,3 +43,33 @@ async def symbol_formating(symbol_format: str, pair: str) -> str:
         else:
             mapped_string += char
     return mapped_string
+
+async def send_ping(ws, exchange_name):
+    while True:
+        try:
+            if exchange_name == "bybit":
+                # 生成包含时间戳的ping消息
+                ping_msg = {"op": "ping", "ts": int(time.time() * 1000)}
+                await ws.send(json.dumps(ping_msg))
+                print(f"[{exchange_name.upper()}] Sent ping message: {ping_msg}")
+            elif exchange_name == "bitget":
+                await ws.send("ping")
+                print(f"[{exchange_name.upper()}] Sent ping message: ping")
+            else:
+                print(f"[{exchange_name.upper()}] Ping mechanism not defined.")
+                break
+            await asyncio.sleep(20)  # 每15秒发送一次ping消息
+        except Exception as e:
+            print(f"[{exchange_name.upper()}] Error sending ping message: {e}")
+            break
+
+async def read_jsonl_async(file_path):
+    data = []
+    async with aiofiles.open(file_path, mode='r') as f:
+        async for line in f:
+            try:
+                record = json.loads(line)
+                data.append(record)
+            except json.JSONDecodeError:
+                print(f"Invalid JSON data in line: {line}")
+    return data

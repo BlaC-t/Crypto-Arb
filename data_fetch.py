@@ -137,7 +137,7 @@ async def get_snapshot(exchange_name, pair, date):
         snapshot["timestamp"] = time.time()
 
         os.makedirs(exchange_name, exist_ok=True)
-        file_path = f"{exchange_name}/orderbook_{pair}-snapshot-{date}.txt"
+        file_path = f"{exchange_name}/orderbook_{pair}-snapshot-{date}.jsonl"
 
         async with aiofiles.open(file_path, mode="a") as f:
             await f.write(json.dumps(snapshot) + "\n")
@@ -181,21 +181,36 @@ async def listener(ws, exchange_name, pair, date, stop_event):
         try:
             data = await asyncio.wait_for(ws.recv(), timeout=10)
             message = json.loads(data)
+
+            if exchange_name == "bybit":
+                if message.get("op") == "pong":
+                    print(f"[{exchange_name.upper()}] Received pong message: {message}")
+                else:
+                    pass
+            elif exchange_name == "bitget":
+                if message == "pong":
+                    print(f"[{exchange_name.upper()}] Received pong message: {msg}")
+                else:
+                    pass
+
             record_time = datetime.datetime.now().timestamp()
             message["record_time"] = record_time
-            async with aiofiles.open(f"{exchange_name}/orderbook_{pair}-update-{date}.txt", mode="a") as f:
+            message['EXCHANGE'] = exchange_name.upper()
+            
+
+            async with aiofiles.open(f"{exchange_name}/orderbook_{pair}-update-{date}.jsonl", mode="a") as f:
                 await f.write(json.dumps(message) + "\n")
 
             log_message = f"[{exchange_name.upper()}] Update received @ {datetime.datetime.now()}\n"
             with open("logs.txt", "a") as log_file:
                 log_file.write(log_message)
 
-            print(f"[{exchange_name.upper()}] Update received @ {datetime.datetime.now()}")
+            # print(f"[{exchange_name.upper()}] Update received @ {datetime.datetime.now()}")
 
         except asyncio.TimeoutError:
             continue
         except json.JSONDecodeError:
-                print(f"[{exchange_name.upper()}] Invalid JSON received")
+            pass
         except Exception as e:
             print(f'Error receiving data: {e}')
             break
@@ -223,9 +238,8 @@ async def start_monitoring(exchange_name, pair):
     while True:
         try:
             async with connect(ws_url) as ws:
-          
-                if exchange_name == "bitget":
-                    ping_task = asyncio.create_task(send_ping(ws))
+                if exchange_name in ["bitget", "bybit"]:
+                    ping_task = asyncio.create_task(send_ping(ws, exchange_name))
                 listener_task = asyncio.create_task(listener(ws, exchange_name, pair_formated, date, stop_event))
 
                 connect_start_time = time.time()
@@ -237,7 +251,8 @@ async def start_monitoring(exchange_name, pair):
                             await get_snapshot(exchange_name, pair_formated, date)
                         
                         stop_event.set()
-                        ping_task.cancel()
+                        if exchange_name in ["bitget", "bybit"]:
+                            ping_task.cancel()
                         await ws.close()
                         await listener_task
                         connect_start_time = time.time()
@@ -254,16 +269,16 @@ async def start_monitoring(exchange_name, pair):
 async def main():
     # monitor multiple exchanges
     tasks = [
-        # asyncio.create_task(start_monitoring("binance", "BTCUSDT")),
-        # asyncio.create_task(start_monitoring("okx", "BTC-USDT")),
+        asyncio.create_task(start_monitoring("binance", "BTCUSDT")),
+        asyncio.create_task(start_monitoring("okx", "BTCUSDT")),
         asyncio.create_task(start_monitoring("bybit", "BTCUSDT")),
-        # asyncio.create_task(start_monitoring("bitget", "BTCUSDT"))
+        asyncio.create_task(start_monitoring("bitget", "BTCUSDT"))
     ]
     try:
-        # Wait for all tasks for 5 hours (5*60*60 seconds)
+        # Wait for all tasks for 1 hours (60*60 seconds)
         await asyncio.wait_for(asyncio.gather(*tasks), timeout=60*60)
     except asyncio.TimeoutError:
-        print("5 hours reached; cancelling tasks...")
+        print("1 hours reached; cancelling tasks...")
         # Cancel each task
         for task in tasks:
             task.cancel()

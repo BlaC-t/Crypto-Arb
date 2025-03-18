@@ -1,0 +1,6 @@
+{
+    "bybit": ["BTCUSDT"],
+    "bitget": ["BTCUSDT"],
+    "okx": ["BTCUSDT"],
+    "binance": ["BTCUSDT"]
+}
