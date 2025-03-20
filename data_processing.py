@@ -170,7 +170,7 @@ def perform_arbitrage(pair):
         sell_exchange = max(data["exchanges_bid"], key=data["exchanges_bid"].get)
         buy_exchange = min(data["exchanges_ask"], key=data["exchanges_ask"].get)
 
-        print(f"suggesting long {buy_exchange} , short {sell_exchange}  fot {pair}")
+        print(f"suggesting long {buy_exchange} , short {sell_exchange} on {pair}")
         
         
 
