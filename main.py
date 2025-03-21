@@ -245,10 +245,10 @@ async def start_monitoring(exchange_name, pair):
 async def main():
     # monitor multiple exchanges
     tasks = [
-        # asyncio.create_task(start_monitoring("binance", "solusdt")),
-        # asyncio.create_task(start_monitoring("okx", "BTC-USDT")),
-        # asyncio.create_task(start_monitoring("bybit", "BTCUSDT"))
-        asyncio.create_task(start_monitoring("bitget", "BTCUSDT"))
+        asyncio.create_task(start_monitoring("binance", "btcusdt")),
+        asyncio.create_task(start_monitoring("okx", "BTC-USDT")),
+        asyncio.create_task(start_monitoring("bybit", "BTCUSDT")),
+        asyncio.create_task(start_monitoring("bitget", "BTCUSDT")),
     ]
     await asyncio.gather(*tasks)
 
