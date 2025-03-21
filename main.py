@@ -2,6 +2,7 @@ import asyncio
 import best_bid_ask
 import data_fetch
 from datetime import datetime, timedelta
+import tools
 
 global record_bids
 record_bids = {}
@@ -33,13 +34,24 @@ async def main():
             if (current_time - bid_time) > timedelta(seconds=5):
                 del record_bids[timestamp]
 
-        # Calculate VWAP for the remaining bids
+        # Calculate rolling VWAP for the remaining bids
         recent_bids = list(record_bids.values())
         vwap = await calculate_vwap(recent_bids)
         if vwap is None:
             print("Invalid VWAP")
-        else:
-            print(f"VWAP: {vwap}")
+
+        # Calculate mean average every 5 seconds
+        if (current_time - last_vwap_time) > timedelta(seconds=5):
+            recent_bids = list(record_bids.values())
+            if len(recent_bids) >= 5:
+                # Extract bid prices from the dictionary
+                bid_prices = [float(bid["best_bid"]) for bid in recent_bids[-5:]]
+                avg, upper_bound, lower_bound = await tools.bollinger_bands(bid_prices)
+                last_vwap_time = current_time
+            else:
+                print(
+                    f"Not enough bids ({len(recent_bids)}) to calculate Bollinger Bands"
+                )
 
         await asyncio.sleep(1)
 

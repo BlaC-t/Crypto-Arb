@@ -7,6 +7,7 @@ import httpx
 import time
 import datetime
 import os
+import numpy as np
 
 
 async def symbol_formating(symbol_format: str, pair: str) -> str:
@@ -78,3 +79,12 @@ async def read_jsonl_async(file_path):
             except json.JSONDecodeError:
                 print(f"Invalid JSON data in line: {line}")
     return data
+
+
+async def bollinger_bands(prices):
+    middle_band = np.mean(prices)
+    std_dev = np.std(prices)
+    upper_band = middle_band + (2 * std_dev)
+    lower_band = middle_band - (2 * std_dev)
+
+    return middle_band, upper_band, lower_band
