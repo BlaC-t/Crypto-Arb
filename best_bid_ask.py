@@ -4,10 +4,10 @@ import glob
 import json
 from datetime import datetime
 import asyncio
+import aiofiles
 from main import record_bids
 
 record_bid = {}
-
 
 async def get_latest_line(file_path):
     """
@@ -195,9 +195,14 @@ async def get_global_best_bid_and_ask(pair):
         "exchanges_bid_volume": best_bid_volume_dict,
         "exchanges_ask_volume": best_ask_volume_dict,
     }
+    
+# load bid-ask logs
+async def save_msg_to_file(msg):
+    async with aiofiles.open("bid_ask.jsonl", mode="a") as f:
+        await f.write(json.dumps(msg) + "\n")
 
 
-async def perform_arbitrage(pair, record_bids):
+async def perform_arbitrage(pair, record_bids, msg):
     # fetch all the data
     data = await get_global_best_bid_and_ask(pair)
     best_bid = data["global_best_bid"]
@@ -216,9 +221,7 @@ async def perform_arbitrage(pair, record_bids):
     min_profit_threshold = 0.01  #
 
     if spread > min_profit_threshold:
-        print(
-            f"aribitragy oppotunity exists, best ask: {best_ask} , best bid: {best_bid}, profit could be {spread}"
-        )
+        msg += (f"Arbitrage Opportunity Exists, Best Ask: {best_ask}, Best Bid: {best_bid}, Profit Spread: {spread}\n")
 
         #  data["exchanges_ask"]  data["exchanges_bid"]
         sell_exchange = data["global_best_bid_exchange"]
@@ -228,25 +231,33 @@ async def perform_arbitrage(pair, record_bids):
         best_bid_volume = data["global_best_bid_volume"]
         best_ask_volume = data["global_best_ask_volume"]
 
-        print(f"suggesting long {buy_exchange} , short {sell_exchange} on {pair}")
-        print(f"Best bid timestamp: {best_bid_ts}, volume: {best_bid_volume}")
-        print(f"Best ask timestamp: {best_ask_ts}, volume: {best_ask_volume}")
+        msg += (f"suggesting long {buy_exchange} , short {sell_exchange} on {pair}\n")
+        msg += (f"Best bid timestamp: {best_bid_ts}, volume: {best_bid_volume}\n")
+        msg += (f"Best ask timestamp: {best_ask_ts}, volume: {best_ask_volume}\n")
 
         # Only update record_bids if there's an arbitrage opportunity
         time_now = datetime.now()
         record_bid = {
             "ts": datetime.fromtimestamp(best_bid_ts / 1000),
             "best_bid": best_bid,
-            "volume": best_bid_volume,
-            "best_bid_exchange": sell_exchange,
+            "best_ask": best_ask,
+            "best_bid_volume": best_bid_volume,
+            "best_ask_volume": best_ask_volume,
+            "best_ask_exchange": sell_exchange,
+            "best_bid_exchange": buy_exchange,
+            "pair": pair
         }
         record_bids[str(time_now)] = record_bid
+        
     else:
-        print("no arbitrage opportunity")
+        msg += ("no arbitrage opportunity\n")
+
+    await save_msg_to_file(msg)
+    return msg
 
 
 async def main(record_bids):
-    #
+    msg = ""
     exchanges = {
         "binance": "btcusdt",  # Binance using lowercase for pair
         "okx": "BTC-USDT",
@@ -254,7 +265,6 @@ async def main(record_bids):
         "bitget": "BTCUSDT",
     }
 
-    print("=== latest orderbook data ===")
     tasks = [
         get_latest_update_for_exchange(exchange, pair)
         for exchange, pair in exchanges.items()
@@ -264,9 +274,8 @@ async def main(record_bids):
         if update is None:
             print(f"{exchange.upper()} cant fetch  {pair} update data")
 
-    print("\n monitor the best bid and ask")
     arbitrage_pair = "BTCUSDT"  ## pairs to check for arbitrage
-    await perform_arbitrage(arbitrage_pair, record_bids)
+    msg = await perform_arbitrage(arbitrage_pair, record_bids, msg)
     return record_bids if len(record_bids) != 0 else None
 
 
