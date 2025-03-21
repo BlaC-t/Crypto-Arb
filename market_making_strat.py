@@ -3,6 +3,8 @@ import os
 import glob
 import json
 from datetime import datetime
+import asyncio
+
 
 def get_latest_line(file_path):
     """
@@ -17,8 +19,9 @@ def get_latest_line(file_path):
             return None
         return lines[-1]
 
+
 def get_latest_update_file(exchange_dir):
-    
+
     pattern = os.path.join(exchange_dir, "orderbook_*update-*.txt")
     files = glob.glob(pattern)
     if not files:
@@ -27,7 +30,7 @@ def get_latest_update_file(exchange_dir):
     def extract_date(filename):
         #  orderbook_{pair}-update-{date}.txt
         base = os.path.basename(filename)
-        parts = base.split('-')
+        parts = base.split("-")
         if len(parts) < 2:
             return None
         date_part = parts[-1].replace(".txt", "")
@@ -44,9 +47,10 @@ def get_latest_update_file(exchange_dir):
     files_with_dates.sort(key=lambda x: x[1], reverse=True)
     return files_with_dates[0][0]
 
+
 def get_latest_update_for_exchange(exchange, pair):
- 
-    exchange_dir = exchange  
+
+    exchange_dir = exchange
     today = datetime.now().date().isoformat()
     # get the data of today
     file_name = f"orderbook_{pair}-update-{today}.txt"
@@ -64,11 +68,15 @@ def get_latest_update_for_exchange(exchange, pair):
             print(f" failed to fetch data from {file_path} ")
             return None
     return None
+
+
 """
 main part --dealing with the data format
 
 """
-def get_best_bid_and_ask(exchange,pair):
+
+
+def get_best_bid_and_ask(exchange, pair):
     update = get_latest_update_for_exchange(exchange, pair)
     if not update:
         return None, None
@@ -85,11 +93,11 @@ def get_best_bid_and_ask(exchange,pair):
     elif exchange == "okx":
         data_list = update.get("data", [])
         if data_list and isinstance(data_list, list):
-            data_entry = data_list[0]  # 
+            data_entry = data_list[0]  #
             bids = data_entry.get("bids", [])
             asks = data_entry.get("asks", [])
             if bids and asks:
-                best_bid = bids[0][0]  # 
+                best_bid = bids[0][0]  #
                 best_ask = asks[0][0]
                 return best_bid, best_ask
         return None, None
@@ -99,7 +107,7 @@ def get_best_bid_and_ask(exchange,pair):
         bids = data_entry.get("b", [])
         asks = data_entry.get("a", [])
         if bids and asks:
-            best_bid = bids[0][0]  # 
+            best_bid = bids[0][0]  #
             best_ask = asks[0][0]
             return best_bid, best_ask
         return None, None
@@ -111,7 +119,7 @@ def get_best_bid_and_ask(exchange,pair):
             bids = data_entry.get("bids", [])
             asks = data_entry.get("asks", [])
             if bids and asks:
-                best_bid = bids[0][0]  # 
+                best_bid = bids[0][0]  #
                 best_ask = asks[0][0]
                 return best_bid, best_ask
         return None, None
@@ -119,6 +127,7 @@ def get_best_bid_and_ask(exchange,pair):
     else:
         print(f"{exchange} data process is wrong")
         return None, None
+
 
 def get_global_best_bid_and_ask(pair):
     exchanges = ["binance", "okx", "bybit", "bitget"]
@@ -142,8 +151,9 @@ def get_global_best_bid_and_ask(pair):
         "global_best_bid": global_best_bid,
         "global_best_ask": global_best_ask,
         "exchanges_bid": best_bid_dict,
-        "exchanges_ask": best_ask_dict
+        "exchanges_ask": best_ask_dict,
     }
+
 
 def perform_arbitrage(pair):
     # fetch all the data
@@ -154,50 +164,49 @@ def perform_arbitrage(pair):
     if best_bid is None or best_ask is None:
         print("not enough data to perform arbitrage")
         return
-    
+
     best_bid = float(best_bid)
     best_ask = float(best_ask)
     # calculate the spread
     spread = best_bid - best_ask
 
-    # minima profit theshold 
-    min_profit_threshold = 0.01  # 
+    # minima profit theshold
+    min_profit_threshold = 0.01  #
 
     if spread > min_profit_threshold:
-        print(f"aribitragy oppotunity exists, bst ask: {best_ask} , best bid: {best_bid},profit could be {spread}")
-        
+        print(
+            f"aribitragy oppotunity exists, bst ask: {best_ask} , best bid: {best_bid},profit could be {spread}"
+        )
+
         #  data["exchanges_ask"]  data["exchanges_bid"]
         sell_exchange = max(data["exchanges_bid"], key=data["exchanges_bid"].get)
         buy_exchange = min(data["exchanges_ask"], key=data["exchanges_ask"].get)
 
         print(f"suggesting long {buy_exchange} , short {sell_exchange} on {pair}")
-        
-        
 
     else:
         print("no arbitrage opportunity")
 
 
-
-    
-def main():
-    # 
+async def main():
+    #
     exchanges = {
         "binance": "btcusdt",  # Binance using lowercase for pair
         "okx": "BTC-USDT",
         "bybit": "BTCUSDT",
-        "bitget": "BTCUSDT"
+        "bitget": "BTCUSDT",
     }
-    
+
     print("=== latest orderbook data ===")
     for exchange, pair in exchanges.items():
         update = get_latest_update_for_exchange(exchange, pair)
-        if update is None :
+        if update is None:
             print(f"{exchange.upper()} cant fetch  {pair} update data")
-    
+
     print("\n monitor the best bid and ask")
     arbitrage_pair = "BTCUSDT"  ## pairs to check for arbitrage
     perform_arbitrage(arbitrage_pair)
 
+
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
