@@ -16,6 +16,16 @@ async def calculate_vwap(bids):
     return total_value / total_volume if total_volume > 0 else None
 
 
+async def remove_old_bids(record_bids, max_age_seconds=5):
+    """Remove bids older than max_age_seconds from record_bids"""
+    current_time = datetime.now()
+    record_bids_copy = record_bids.copy()
+    for timestamp in list(record_bids_copy.keys()):
+        bid_time = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S.%f")
+        if (current_time - bid_time) > timedelta(seconds=max_age_seconds):
+            del record_bids[timestamp]
+
+
 async def main():
     fetch_task = asyncio.create_task(data_fetch.main())
     last_vwap_time = datetime.now()
@@ -28,11 +38,7 @@ async def main():
         current_time = datetime.now()
 
         # Remove bids older than 5 seconds
-        record_bids_copy = record_bids.copy()
-        for timestamp in list(record_bids_copy.keys()):
-            bid_time = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S.%f")
-            if (current_time - bid_time) > timedelta(seconds=5):
-                del record_bids[timestamp]
+        await remove_old_bids(record_bids)
 
         # Calculate rolling VWAP for the remaining bids
         recent_bids = list(record_bids.values())
@@ -44,7 +50,6 @@ async def main():
         if (current_time - last_vwap_time) > timedelta(seconds=5):
             recent_bids = list(record_bids.values())
             if len(recent_bids) >= 5:
-                # Extract bid prices from the dictionary
                 bid_prices = [float(bid["best_bid"]) for bid in recent_bids[-5:]]
                 avg, upper_bound, lower_bound = await tools.bollinger_bands(bid_prices)
                 last_vwap_time = current_time
