@@ -340,7 +340,7 @@ async def main():
     ]
     try:
         # Wait for all tasks for 1 hours (60*60 seconds)
-        await asyncio.wait_for(asyncio.gather(*tasks), timeout=60 * 60)
+        await asyncio.gather(*tasks)
     except asyncio.TimeoutError:
         print("1 hours reached; cancelling tasks...")
         # Cancel each task
