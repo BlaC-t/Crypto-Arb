@@ -84,14 +84,14 @@ class mm_Trader:
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
         
         # Ensure pair exists in inventory
-        self._ensure_pair_exists(pair)
+        await self._ensure_pair_exists(pair)  # 添加 await
         
         # Buy condition with budget check
         if lower_bound <= best_bid <= upper_bound:
             # Calculate maximum volume we can buy within budget
             max_affordable_volume = min(bid_volume, self.inventory["Fund"]["USD"] / best_bid)
             
-            if max_affordable_volume <= 0:
+            if max_affordable_volume <= 0 and self.inventory["Fund"]["USD"] >= 1:
                 # Check if we have any inventory to sell
                 if self.inventory[pair] <= 0:
                     print(f"[INFO] Insufficient funds and no inventory to sell, skipping this trade.")
@@ -104,25 +104,25 @@ class mm_Trader:
                     return
                 
                 # Execute sell only
-                await self._execute_sell(best_ask, sell_volume, sell_exchange, pair, current_time)
+                await self._execute_sell(best_bid, sell_volume, sell_exchange, pair, current_time)
             elif bid_volume == 0:
                 # Calculate maximum volume we can sell
                 sell_volume = min(self.inventory[pair], ask_volume)
                 if sell_volume <= 0:
                     print(f"[INFO] No inventory to sell or buy, skipping this trade.")
                     return
-                await self._execute_sell(best_ask, sell_volume, sell_exchange, pair, current_time)
+                await self._execute_sell(best_bid, sell_volume, sell_exchange, pair, current_time)
                 return
                 
             # Check funds again after selling
             max_affordable_volume = min(bid_volume, self.inventory["Fund"]["USD"] / best_bid)
-            if lower_bound <= best_bid <= upper_bound and max_affordable_volume > 0:
+            if lower_bound <= best_bid <= upper_bound and max_affordable_volume > 0 and self.inventory["Fund"]["USD"] >= 1:
                 # Execute buy
-                await self._execute_buy(best_bid, max_affordable_volume, buy_exchange, pair, current_time)
+                await self._execute_buy(best_ask, max_affordable_volume, buy_exchange, pair, current_time)
                 
                 # Immediately sell at best ask with available ask volume
                 sell_volume = min(max_affordable_volume, ask_volume)
-                await self._execute_sell(best_ask, sell_volume, sell_exchange, pair, current_time)
+                await self._execute_sell(best_bid, sell_volume, sell_exchange, pair, current_time)
 
 async def trading_strategy(upper_bound, lower_bound, best_bid, best_ask, buy_exchange, sell_exchange):
     """Main trading strategy loop"""

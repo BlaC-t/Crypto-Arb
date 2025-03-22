@@ -2,33 +2,70 @@
     "binance": {
         "rest_url": "https://api.binance.com/api/v3/depth",
         "ws_url": "wss://stream.binance.com:443/ws/{pair}@depth",
-        "rate_limit": 0.2,
-        "param_map": {
-            "instrument_id": "symbol",
-            "depth_size": "limit"
+        "rate_limit": 0.2,  # 5次/秒
+        "symbol_format": "xxxyyyy",
+        "param_map": {"instrument_id": "symbol", "depth_size": "limit"},
+        "snapshot_parser": lambda data: {
+            "asks": data["asks"],
+            "bids": data["bids"],
+            "ts": data["lastUpdateId"],
         },
-        "snapshot_parser": "binance_snapshot_parser",
         "subscription_template": {
             "method": "SUBSCRIBE",
             "params": ["{pair}@depth"],
-            "id": 1
-        }
-    },
-    "okx":{
-        "rest_url": "https://www.okx.com/api/v5/market/books-full",
-        "ws_url": "wss://ws.okx.com:8443/ws/v5/public",
-        "rate_limit": 0.2,
-        "param_map": {
-            "instrument_id": "instId",
-            "depth_size": "sz"
+            "id": 1,
         },
-        "snapshot_parser": "okx_snapshot_parser",
+    },
+    "okx": {
+        "rest_url": "https://www.okx.com//api/v5/market/books",
+        "ws_url": "wss://ws.okx.com:8443/ws/v5/public",
+        "rate_limit": 0.2,  # 10次/2秒 → 每次请求间隔 ≥0.2秒
+        "symbol_format": "XXX-YYYY",
+        "param_map": {"instrument_id": "instId", "depth_size": "sz"},  # 最大400
+        "snapshot_parser": lambda data: {
+            "asks": data["data"][0]["asks"],
+            "bids": data["data"][0]["bids"],
+            "ts": data["data"][0]["ts"],
+        },
         "subscription_template": {
             "op": "subscribe",
-            "args": [{
-                "channel": "books",
-                "instId": "{pair}"
-            }]
-        }
-    }
+            "args": [{"channel": "books", "instId": "{pair}"}],  # 频道名称  # BTC-USDT
+        },
+    },
+    "bybit": {
+        "rest_url": "https://api.bybit.com/v5/market/orderbook",
+        "ws_url": "wss://stream.bybit.com/v5/public/spot",
+        "rate_limit": 0.1,  # 10次/秒
+        "symbol_format": "XXXYYYY",
+        "depth": 200,
+        "param_map": {
+            "instrument_id": "symbol",  # Bybit使用symbol参数
+            "depth_size": "limit",  # 档位数参数
+        },
+        "snapshot_parser": lambda data: {  # 自定义解析逻辑
+            "asks": data["result"]["a"],
+            "bids": data["result"]["b"],
+            "ts": data["result"]["ts"],
+        },
+        "subscription_template": {
+            "op": "subscribe",
+            "args": ["orderbook.{depth}.{pair}"],  # 订阅100档深度
+        },
+    },
+    "bitget": {
+        "rest_url": "https://api.bitget.com/api/spot/v2/market/depth",
+        "ws_url": "wss://ws.bitget.com/v2/ws/public",
+        "rate_limit": 0.1,  # 10次/秒
+        "symbol_format": "XXXYYYY",  # 例如BTCUSDT
+        "param_map": {"instrument_id": "symbol", "depth_size": "limit"},
+        "snapshot_parser": lambda data: {
+            "asks": [[entry[0], entry[1]] for entry in data["data"]["asks"]],
+            "bids": [[entry[0], entry[1]] for entry in data["data"]["bids"]],
+            "ts": data["data"]["ts"],
+        },
+        "subscription_template": {
+            "op": "subscribe",
+            "args": [{"instType": "SPOT", "channel": "books", "instId": "{pair}"}],
+        },
+    },
 }

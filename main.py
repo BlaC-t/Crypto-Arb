@@ -24,6 +24,13 @@ async def remove_old_bids(record_bids, current_time, max_age_seconds=5):
         bid_time = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S.%f")
         if (current_time - bid_time) > timedelta(seconds=max_age_seconds):
             del record_bids[timestamp]
+    # Ensure we keep at least 5 bids for Bollinger Bands calculation
+    if len(record_bids) < 5:
+        # Keep the most recent 5 bids regardless of age
+        recent_timestamps = sorted(record_bids_copy.keys(), reverse=True)[:5]
+        for timestamp in recent_timestamps:
+            if timestamp not in record_bids:
+                record_bids[timestamp] = record_bids_copy[timestamp]
 
 
 async def main():
@@ -57,21 +64,24 @@ async def main():
                 bid_prices = [float(bid["best_bid"]) for bid in recent_bids[-5:]]
                 _, upper_bound, lower_bound = await tools.bollinger_bands(bid_prices)
                 last_vwap_time = current_time
+                print(f"Updated Bollinger Bands - Upper: {upper_bound}, Lower: {lower_bound}")
 
         # Execute trading strategy every second with current bounds
-        if upper_bound is not None and lower_bound is not None:
+        if upper_bound is not None and lower_bound is not None and recent_bids:
+            print(f"Upper Bound: {upper_bound}, Lower Bound: {lower_bound}")
             # Get current best bid/ask and exchanges
             best_bid = float(recent_bids[-1]["best_bid"])
             best_ask = float(recent_bids[-1]["best_ask"])
-            buy_exchange = recent_bids[-1]["best_bid_exchange"]
-            sell_exchange = recent_bids[-1]["best_ask_exchange"]
+            buy_exchange = recent_bids[-1]["best_ask_exchange"]
+            sell_exchange = recent_bids[-1]["best_bid_exchange"]
             bid_volume = float(recent_bids[-1]["best_bid_volume"])
             ask_volume = float(recent_bids[-1]["best_ask_volume"])
             pair = recent_bids[-1]["pair"]
             
-            # Execute trade with current bounds
-            await trader.execute_trade(best_bid, best_ask, upper_bound, lower_bound, 
-                                     buy_exchange, sell_exchange, bid_volume, ask_volume, pair)
+            # Trade if there's a profit spread and within Bollinger Bands
+            if best_bid > best_ask:
+                await trader.execute_trade(best_bid, best_ask, upper_bound, lower_bound, 
+                                         buy_exchange, sell_exchange, bid_volume, ask_volume, pair)
 
         await asyncio.sleep(1)
 

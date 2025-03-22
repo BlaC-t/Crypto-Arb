@@ -86,6 +86,9 @@ EXCHANGE_CONFIG = {
 
 
 async def get_snapshot(exchange_name, pair, date):
+    """
+    Get snapshot from exchange.
+    """
 
     config = EXCHANGE_CONFIG[exchange_name]
 
@@ -145,7 +148,10 @@ async def get_snapshot(exchange_name, pair, date):
 
 
 async def listener(ws, exchange_name, pair, date, stop_event):
-    """Global listener function"""
+    """
+    Global listener function that is used to listen to the exchange.
+    Ping and Pong messages are handled here.
+    """
     config = EXCHANGE_CONFIG[exchange_name]
 
     if exchange_name == "bybit":
@@ -342,7 +348,7 @@ async def main():
         # Wait for all tasks for 1 hours (60*60 seconds)
         await asyncio.gather(*tasks)
     except asyncio.TimeoutError:
-        print("1 hours reached; cancelling tasks...")
+        print("Cancelling tasks due to timeout error...")
         # Cancel each task
         for task in tasks:
             task.cancel()

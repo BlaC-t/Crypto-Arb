@@ -271,8 +271,16 @@ async def main(record_bids):
     ]
     results = await asyncio.gather(*tasks)
     for (exchange, pair), update in zip(exchanges.items(), results):
+        retries = 0
+        while update is None and retries < 3:
+            print(f"{exchange.upper()} failed to fetch {pair} update data. Retrying in 1 second...")
+            await asyncio.sleep(1)
+            update = await get_latest_update_for_exchange(exchange, pair)
+            retries += 1
+
         if update is None:
-            print(f"{exchange.upper()} cant fetch  {pair} update data")
+            print(f"{exchange.upper()} failed to fetch {pair} update data after {retries} retries. Exiting with error.")
+            return None
 
     arbitrage_pair = "BTCUSDT"  ## pairs to check for arbitrage
     msg = await perform_arbitrage(arbitrage_pair, record_bids, msg)
