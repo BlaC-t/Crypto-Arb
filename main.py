@@ -1,6 +1,8 @@
 import asyncio
 import best_bid_ask
 import data_fetch
+import aiofiles
+import json
 from datetime import datetime, timedelta
 import tools
 import mm_trading  # Add this import
@@ -34,6 +36,7 @@ async def remove_old_bids(record_bids, current_time, max_age_seconds=5):
 
 
 async def main():
+    start_time = datetime.now()
     fetch_task = asyncio.create_task(data_fetch.main())
     last_vwap_time = datetime.now()
     trader = await mm_trading.mm_Trader().initialize()
@@ -85,6 +88,7 @@ async def main():
 
         await asyncio.sleep(1)
 
+    end_time = datetime.now()
     # Clean up tasks
     fetch_task.cancel()
     stdin_task.cancel()
@@ -94,9 +98,12 @@ async def main():
         pass
 
     # Calculate final inventory value
-    await calculate_final_inventory_value(trader, record_bids)
+    await calculate_final_inventory_value(trader, record_bids, start_time, end_time)
+    
 
-async def calculate_final_inventory_value(trader, record_bids):
+async def calculate_final_inventory_value(trader, record_bids, start_time, end_time):
+    """Calculate final inventory value and print it"""
+    await asyncio.sleep(1)  # Wait for any remaining trades to complete
     """Calculate total value of inventory using last best_ask prices"""
     if not record_bids:
         print("No recent bids available to calculate inventory value")
@@ -111,16 +118,36 @@ async def calculate_final_inventory_value(trader, record_bids):
     inventory = trader.inventory
     total_usd = inventory["Fund"]["USD"]
     
-    # Calculate value of coins
+    # Prepare data for JSON
+    inventory_data = {
+        "timestamp": datetime.now().isoformat(),
+        "USD": inventory["Fund"]["USD"],
+        "pair": pair,
+        "total_value": total_usd,
+        "duration_seconds": (end_time - start_time).total_seconds()
+    }
+    
     if pair in inventory and inventory[pair] > 0:
         coin_value = inventory[pair] * best_ask
         total_usd += coin_value
+        inventory_data.update({
+            "coin_quantity": inventory[pair],
+            "coin_value": coin_value,
+            "best_ask": best_ask,
+            "total_value": total_usd
+        })
         print(f"\nFinal Inventory Value:")
         print(f"USD: {inventory['Fund']['USD']}")
         print(f"{pair}: {inventory[pair]} (Value: {coin_value} @ {best_ask})")
         print(f"Total Value: {total_usd}")
     else:
         print(f"\nFinal Inventory Value: {total_usd} USD (No {pair} holdings)")
+    
+    print(f"Total time taken: {end_time - start_time}")
+    
+    # Write to JSON file asynchronously
+    async with aiofiles.open("final_position.json", "a") as f:
+        await f.write(json.dumps(inventory_data) + "\n")
 
 async def read_stdin(stop_event):
     """Read stdin and set stop event when 'stop' is entered"""
