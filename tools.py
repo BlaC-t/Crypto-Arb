@@ -81,10 +81,12 @@ async def read_jsonl_async(file_path):
     return data
 
 
-async def bollinger_bands(prices):
-    middle_band = np.mean(prices)
-    std_dev = np.std(prices)
-    upper_band = middle_band + (2 * std_dev)
-    lower_band = middle_band - (2 * std_dev)
+async def bollinger_bands(bid_prices, ask_prices):
+    # 计算bid和ask的平均值
+    avg_prices = (np.array(bid_prices) + np.array(ask_prices)) / 2
+    middle_band = np.mean(avg_prices)
+    std_dev = np.std(avg_prices)
 
+    upper_band = middle_band + (1.5 * std_dev)
+    lower_band = middle_band - (1.5 * std_dev)
     return middle_band, upper_band, lower_band

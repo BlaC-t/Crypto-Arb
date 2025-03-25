@@ -9,6 +9,7 @@ from main import record_bids
 
 record_bid = {}
 
+
 async def get_latest_line(file_path):
     """
     read the last line of the file
@@ -172,6 +173,18 @@ async def get_global_best_bid_and_ask(pair):
         global_best_ask_ts = best_ask_ts_dict[global_best_ask_exchange]
         global_best_bid_volume = best_bid_volume_dict[global_best_bid_exchange]
         global_best_ask_volume = best_ask_volume_dict[global_best_ask_exchange]
+        top_20_global_best_bid = sorted(
+            best_bid_dict.items(), key=lambda x: x[1], reverse=True
+        )[:20]
+        top_20_global_best_ask = sorted(
+            best_ask_dict.items(), key=lambda x: x[1], reverse=True
+        )[:20]
+        top_20_global_best_bid_volume = sorted(
+            best_bid_volume_dict.items(), key=lambda x: x[1], reverse=True
+        )[:20]
+        top_20_global_best_ask_volume = sorted(
+            best_ask_volume_dict.items(), key=lambda x: x[1], reverse=True
+        )[:20]
     else:
         global_best_bid, global_best_ask = None, None
         global_best_bid_exchange, global_best_ask_exchange = None, None
@@ -194,8 +207,13 @@ async def get_global_best_bid_and_ask(pair):
         "exchanges_ask_ts": best_ask_ts_dict,
         "exchanges_bid_volume": best_bid_volume_dict,
         "exchanges_ask_volume": best_ask_volume_dict,
+        "top_20_global_best_bids": top_20_global_best_bid,
+        "top_20_global_best_asks": top_20_global_best_ask,
+        "top_20_global_best_bid_volume": top_20_global_best_bid_volume,
+        "top_20_global_best_ask_volume": top_20_global_best_ask_volume,
     }
-    
+
+
 # load bid-ask logs
 async def save_msg_to_file(msg):
     async with aiofiles.open("bid_ask.jsonl", mode="a") as f:
@@ -221,7 +239,7 @@ async def perform_arbitrage(pair, record_bids, msg):
     min_profit_threshold = 0.01  #
 
     if spread > min_profit_threshold:
-        msg += (f"Arbitrage Opportunity Exists, Best Ask: {best_ask}, Best Bid: {best_bid}, Profit Spread: {spread}\n")
+        msg += f"Arbitrage Opportunity Exists, Best Ask: {best_ask}, Best Bid: {best_bid}, Profit Spread: {spread}\n"
 
         #  data["exchanges_ask"]  data["exchanges_bid"]
         sell_exchange = data["global_best_bid_exchange"]
@@ -231,9 +249,9 @@ async def perform_arbitrage(pair, record_bids, msg):
         best_bid_volume = data["global_best_bid_volume"]
         best_ask_volume = data["global_best_ask_volume"]
 
-        msg += (f"suggesting long {buy_exchange} , short {sell_exchange} on {pair}\n")
-        msg += (f"Best bid timestamp: {best_bid_ts}, volume: {best_bid_volume}\n")
-        msg += (f"Best ask timestamp: {best_ask_ts}, volume: {best_ask_volume}\n")
+        msg += f"suggesting long {buy_exchange} , short {sell_exchange} on {pair}\n"
+        msg += f"Best bid timestamp: {best_bid_ts}, volume: {best_bid_volume}\n"
+        msg += f"Best ask timestamp: {best_ask_ts}, volume: {best_ask_volume}\n"
 
         # Only update record_bids if there's an arbitrage opportunity
         time_now = datetime.now()
@@ -245,12 +263,16 @@ async def perform_arbitrage(pair, record_bids, msg):
             "best_ask_volume": best_ask_volume,
             "best_ask_exchange": sell_exchange,
             "best_bid_exchange": buy_exchange,
-            "pair": pair
+            "pair": pair,
+            "top_20_global_best_bids": data["top_20_global_best_bids"],
+            "top_20_global_best_asks": data["top_20_global_best_asks"],
+            "top_20_global_best_bid_volume": data["top_20_global_best_bid_volume"],
+            "top_20_global_best_ask_volume": data["top_20_global_best_ask_volume"],
         }
         record_bids[str(time_now)] = record_bid
-        
+
     else:
-        msg += ("no arbitrage opportunity\n")
+        msg += "no arbitrage opportunity\n"
 
     await save_msg_to_file(msg)
     return msg
@@ -273,13 +295,17 @@ async def main(record_bids):
     for (exchange, pair), update in zip(exchanges.items(), results):
         retries = 0
         while update is None and retries < 3:
-            print(f"{exchange.upper()} failed to fetch {pair} update data. Retrying in 1 second...")
+            print(
+                f"{exchange.upper()} failed to fetch {pair} update data. Retrying in 1 second..."
+            )
             await asyncio.sleep(1)
             update = await get_latest_update_for_exchange(exchange, pair)
             retries += 1
 
         if update is None:
-            print(f"{exchange.upper()} failed to fetch {pair} update data after {retries} retries. Exiting with error.")
+            print(
+                f"{exchange.upper()} failed to fetch {pair} update data after {retries} retries. Exiting with error."
+            )
             return None
 
     arbitrage_pair = "BTCUSDT"  ## pairs to check for arbitrage
