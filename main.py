@@ -146,7 +146,7 @@ async def calculate_final_inventory_value(trader, record_bids, start_time, end_t
     print(f"Total time taken: {end_time - start_time}")
     
     # Write to JSON file asynchronously
-    async with aiofiles.open("final_position.json", "a") as f:
+    async with aiofiles.open("final_position.jsonl", "a") as f:
         await f.write(json.dumps(inventory_data) + "\n")
 
 async def read_stdin(stop_event):
