@@ -87,8 +87,8 @@ def reset_inventory():
 
 
 async def main():
-    num_runs = 10
-    run_duration = 30  # minutes
+    num_runs = 5
+    run_duration = 5  # minutes
 
     for i in range(num_runs):
         print(f"Starting run {i+1}/{num_runs}")

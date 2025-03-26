@@ -16,7 +16,7 @@ EXCHANGE_CONFIG = {
     "binance": {
         "rest_url": "https://api.binance.com/api/v3/depth",
         "ws_url": "wss://stream.binance.com:443/ws/{pair}@depth",
-        "rate_limit": 0.2,  # 5次/秒
+        "rate_limit": 0.2,
         "symbol_format": "xxxyyyy",
         "param_map": {"instrument_id": "symbol", "depth_size": "limit"},
         "snapshot_parser": lambda data: {
@@ -69,8 +69,8 @@ EXCHANGE_CONFIG = {
     "bitget": {
         "rest_url": "https://api.bitget.com/api/spot/v2/market/depth",
         "ws_url": "wss://ws.bitget.com/v2/ws/public",
-        "rate_limit": 0.1,  # 10次/秒
-        "symbol_format": "XXXYYYY",  # 例如BTCUSDT
+        "rate_limit": 0.1,
+        "symbol_format": "XXXYYYY",
         "param_map": {"instrument_id": "symbol", "depth_size": "limit"},
         "snapshot_parser": lambda data: {
             "asks": [[entry[0], entry[1]] for entry in data["data"]["asks"]],

@@ -49,6 +49,10 @@ async def main():
     upper_bound = None
     lower_bound = None
 
+    # Create a global array to record the best_bid prices
+    global best_bid_prices
+    best_bid_prices = []
+
     # Create a task for reading stdin
     stop_event = asyncio.Event()
     stdin_task = asyncio.create_task(read_stdin(stop_event))
@@ -77,10 +81,10 @@ async def main():
                 print(
                     f"Updated Bollinger Bands - Upper: {upper_bound}, Lower: {lower_bound}"
                 )
+        best_bid_prices.append(recent_bids[-1]["best_bid"])
 
         # Execute trading strategy every second with current bounds
         if upper_bound is not None and lower_bound is not None and recent_bids:
-            print(f"Upper Bound: {upper_bound}, Lower Bound: {lower_bound}")
             # Get current best bid/ask and exchanges
             best_bid = float(recent_bids[-1]["best_bid"])
             best_ask = float(recent_bids[-1]["best_ask"])
@@ -131,6 +135,7 @@ async def calculate_final_inventory_value(trader, record_bids, start_time, end_t
     last_bid = list(record_bids.values())[-1]
     best_ask = float(last_bid["best_ask"])
     best_bid = float(last_bid["best_bid"])
+
     pair = last_bid["pair"]
 
     # Get current inventory
@@ -146,8 +151,10 @@ async def calculate_final_inventory_value(trader, record_bids, start_time, end_t
         "duration_seconds": (end_time - start_time).total_seconds(),
     }
 
+    avg_bid_price = np.mean(np.array(best_bid_prices))
+
     if pair in inventory and inventory[pair] > 0:
-        coin_value = inventory[pair] * best_bid
+        coin_value = inventory[pair] * avg_bid_price
         total_usd += coin_value
         inventory_data.update(
             {

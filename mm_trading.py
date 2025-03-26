@@ -4,6 +4,9 @@ from datetime import datetime
 from pathlib import Path
 import json
 
+global tc
+tc = 0.00001
+
 
 class mm_Trader:
     def __init__(self):
@@ -44,7 +47,7 @@ class mm_Trader:
 
     async def _execute_buy(self, price, volume, exchange, pair, current_time):
         """Execute buy operation"""
-        total_cost = price * volume
+        total_cost = price * volume * (1 + tc)
         self.inventory["Fund"]["USD"] -= total_cost
         self.inventory[pair] += volume
         await self._save_inventory()
@@ -65,7 +68,7 @@ class mm_Trader:
 
     async def _execute_sell(self, price, volume, exchange, pair, current_time):
         """Execute sell operation"""
-        total_revenue = price * volume
+        total_revenue = price * volume * (1 - tc)
         self.inventory["Fund"]["USD"] += total_revenue
         self.inventory[pair] -= volume
         await self._save_inventory()
@@ -100,15 +103,27 @@ class mm_Trader:
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
 
         # Ensure pair exists in inventory
-        await self._ensure_pair_exists(pair)  # 添加 await
+        await self._ensure_pair_exists(pair)
 
         print(lower_bound, best_ask, upper_bound)
         # Buy condition with budget check
-        if lower_bound <= best_ask <= upper_bound:
+        if (lower_bound <= best_ask <= upper_bound) and (lower_bound <= best_bid):
             # Calculate maximum volume we can buy within budget
             max_affordable_volume = min(
                 ask_volume, self.inventory["Fund"]["USD"] / best_ask
             )
+
+            # Calculate potential profit and transaction costs
+            potential_profit = (best_bid - best_ask) * max_affordable_volume
+            transaction_cost = tc * (
+                best_ask * max_affordable_volume + best_bid * bid_volume
+            )
+
+            if potential_profit <= transaction_cost:
+                print(
+                    f"[INFO] Potential profit {potential_profit} too small compared to TC {transaction_cost}, skipping trade"
+                )
+                return
 
             if max_affordable_volume <= 0 and self.inventory["Fund"]["USD"] >= 1:
                 # Check if we have any inventory to sell
@@ -148,6 +163,7 @@ class mm_Trader:
                 and max_affordable_volume > 0
                 and self.inventory["Fund"]["USD"] >= 1
             ):
+                print(max_affordable_volume)
                 # Execute buy
                 await self._execute_buy(
                     best_ask, max_affordable_volume, buy_exchange, pair, current_time
@@ -158,16 +174,5 @@ class mm_Trader:
                 await self._execute_sell(
                     best_bid, sell_volume, sell_exchange, pair, current_time
                 )
-
-
-async def trading_strategy(
-    upper_bound, lower_bound, best_bid, best_ask, buy_exchange, sell_exchange
-):
-    """Main trading strategy loop"""
-    trader = Trader()
-
-    while True:
-        await trader.execute_trade(
-            best_bid, best_ask, upper_bound, lower_bound, buy_exchange, sell_exchange
-        )
-        await asyncio.sleep(1)
+        else:
+            return
